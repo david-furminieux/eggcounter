@@ -111,6 +111,7 @@ def start():
     logger.debug('arguments are {}'.format(args))
 
     COMMANDS[args.init](args).run()
+    logger.info('terminate')
 
 
 if __name__ == '__main__':

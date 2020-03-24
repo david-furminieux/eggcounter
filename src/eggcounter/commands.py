@@ -109,18 +109,17 @@ class SystemBootStraper(Command):
             cmd = cmd.strip()
             if cmd == '':
                 continue
-            logger.debug(cmd)
-            cursor.execute(cmd)
+            try:
+                cursor.execute(cmd)
+            except Exception:
+                logger.error('while executing\n{}'.format(cmd), exc_info=True)
         self.commit()
 
     def _readAllCurrencyIds(self, cursor):
         '''
-        returns all currencies by id (plus an empty one)
+        returns all currencies by id
         '''
-        cursor.execute('''
-        SELECT id FROM currency
-        UNION SELECT NULL;
-        ''')
+        cursor.execute('''SELECT id FROM currency''')
         return (x[0] for x in cursor.fetchall())
 
     def importCurrencies(self):
@@ -132,24 +131,26 @@ class SystemBootStraper(Command):
 
         cursor = self._cursor()
         alreadyInserted = set(self._readAllCurrencyIds(cursor))
+        alreadyInserted.add(None)
+
         for currency in currencies:
 
             if (currency['Withdrawal_Date'] is not None
-                or currency['Withdrawal_Interval'] is not None):
-                    # ignore currencies that have been withdrawn
-                    continue
-            numericCode = currency['Numeric_Code']
-            numericCode = int(numericCode) if numericCode is not None else None
-            if numericCode in alreadyInserted:
+               or currency['Withdrawal_Interval'] is not None):
+                # ignore currencies that have been withdrawn
+                continue
+            code = currency['Numeric_Code']
+            code = int(code) if code is not None else None
+            if code in alreadyInserted:
                 # remove those without a numeric code and
                 # remember that currencies can be used by multiple entities
                 continue
-            alreadyInserted.add(numericCode)
+            alreadyInserted.add(code)
             try:
                 cursor.execute('''
                 INSERT INTO currency(id, code, name) VALUES(%s, %s, %s)
                 ''', (
-                    int(numericCode),
+                    code,
                     currency['Alphabetic_Code'],
                     currency['Currency']
                 ))
