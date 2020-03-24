@@ -5,7 +5,8 @@ from anyjson import deserialize
 from argparse import ArgumentParser
 from logging import getLogger
 from logging.config import dictConfig
-from eggcounter.runner import CLIRunner
+
+from eggcounter.commands import CLIRunner, SystemBootStraper
 
 DEFAULT_LOG_CONF = {
     'version': 1,
@@ -38,10 +39,23 @@ DEFAULT_LOG_CONF = {
 
 VALID_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR']
 
+COMMANDS = {
+    'init': SystemBootStraper
+}
+
 
 def parseArguments():
 
+    # think about using sub commands instead of mutually excluisive
+
     parser = ArgumentParser(description='eggcounter stock monitoring')
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('init', default=False, nargs='?',
+                       help='initialize a finance store')
+    group.add_argument('bla', default=False, nargs='?',
+                       help='do something else')
+
     group = parser.add_argument_group('logging')
     group.add_argument('-l', '--log', type=str, nargs='?',
         help='path to the log config (./etc/log.conf)',
@@ -49,6 +63,7 @@ def parseArguments():
     group.add_argument('--level', type=str, nargs='?',
         help='set the loglevel for the root logger',
         default='WARN')
+
     parser.add_argument('-p', '--plugin', type=str, nargs='*',
         help='path to a directory or an egg containing component plugins')
     # this should be done somehow in another way
@@ -90,10 +105,13 @@ def configureLogger(level=None, path=None):
 def start():
     args = parseArguments()
     configureLogger(args.level, args.log)
-    getLogger('system').info('start')
 
-    runner = CLIRunner(args)
-    runner.run()
+    logger = getLogger('system')
+    logger.info('start')
+    logger.debug('arguments are {}'.format(args))
+
+    COMMANDS[args.init](args).run()
+
 
 if __name__ == '__main__':
     start()
