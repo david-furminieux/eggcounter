@@ -6,11 +6,11 @@ from anyjson import deserialize
 from eggcounter.api import ConfigurationException
 from importlib import import_module
 from logging import getLogger
-
+from re import compile
 
 class Command(object):
 
-    def __init__(self, _options=None):
+    def __init__(self, _options):
         super().__init__()
         self._confPath = './etc'
         self._driver = None
@@ -67,30 +67,9 @@ class Command(object):
             self._connection.rollback()
 
 
-class CLIRunner(object):
-
-    def __init__(self, options=None):
-        '''
-        :param dict<str, any> options: possible options to configure the system
-        '''
-        super().__init__()
-        if options is None:
-            options = {}
-        self.configure(options)
-
-    def configure(self, options):
-        '''
-        configure the Runner
-        :param dict<str, any> options: the possible options.
-        '''
-
-    def run(self):
-        pass
-
-
 class SystemBootStraper(Command):
 
-    def __init__(self, options=None):
+    def __init__(self, options):
         super().__init__(options)
 
     def run(self):
@@ -115,12 +94,26 @@ class SystemBootStraper(Command):
                 logger.error('while executing\n{}'.format(cmd), exc_info=True)
         self.commit()
 
-    def _readAllCurrencyIds(self, cursor):
+    def _readAllCurrencyAndEntities(self, cursor):
         '''
         returns all currencies by id
         '''
-        cursor.execute('''SELECT id FROM currency''')
-        return (x[0] for x in cursor.fetchall())
+        cursor.execute('''
+            SELECT cur.code, ent.name
+            FROM currency AS cur
+            LEFT JOIN entity AS ent ON (ent.currency = cur.code)
+        ''')
+        lastCurrency = None
+        countries = set()
+        for cid, entity in cursor.fetchall():
+            if lastCurrency != cid:
+                yield lastCurrency, countries
+                lastCurrency = cid
+                countries = set()
+            if entity is not None:
+                countries.add(object)
+
+        yield lastCurrency, countries
 
     def importCurrencies(self):
         logger = getLogger('database')
@@ -130,8 +123,8 @@ class SystemBootStraper(Command):
             currencies = deserialize(''.join(istream.readlines()))
 
         cursor = self._cursor()
-        alreadyInserted = set(self._readAllCurrencyIds(cursor))
-        alreadyInserted.add(None)
+        alreadyInserted = dict(self._readAllCurrencyAndEntities(cursor))
+        countriesByCurrency = {}
 
         for currency in currencies:
 
@@ -139,23 +132,77 @@ class SystemBootStraper(Command):
                or currency['Withdrawal_Interval'] is not None):
                 # ignore currencies that have been withdrawn
                 continue
-            code = currency['Numeric_Code']
-            code = int(code) if code is not None else None
+            code = currency['Alphabetic_Code']
+
+            entity = currency['Entity'].lower()
+            try:
+                tmp = countriesByCurrency[code]
+            except KeyError:
+                tmp = set()
+                countriesByCurrency[code] = tmp
+            tmp.add(entity)
+
             if code in alreadyInserted:
                 # remove those without a numeric code and
                 # remember that currencies can be used by multiple entities
                 continue
-            alreadyInserted.add(code)
+            alreadyInserted[code] = set()
             try:
                 cursor.execute('''
                 INSERT INTO currency(id, code, name) VALUES(%s, %s, %s)
                 ''', (
+                    int(currency['Numeric_Code']),
                     code,
-                    currency['Alphabetic_Code'],
                     currency['Currency']
                 ))
             except Exception:
                 logger.error(currency, exc_info=True)
                 self.rollback()
                 raise
+
+        for currency, countries in countriesByCurrency.items():
+            for country in countries - alreadyInserted.get(currency, set()):
+                # since we have country with more than one currency
+                # only take the first
+                cursor.execute('''
+                    SELECT name FROM entity WHERE name = %s
+                ''', (
+                    country,
+                ))
+                if not cursor.fetchone():
+                    cursor.execute('''
+                        INSERT INTO entity(name, currency) VALUES(%s, %s)
+                    ''', (
+                        country, currency
+                    ))
+
+        self.commit()
+
+
+class TearDownCommand(Command):
+
+    def __init__(self, options):
+        super().__init__(options)
+
+    def run(self):
+        self._run()
+        self.removeAllTables()
+
+    def removeAllTables(self):
+        logger = getLogger('database')
+        logger.info('importing schema')
+        with open('./sql/schema.sql') as istream:
+            schema = ''.join(istream.readlines())
+        cmds = schema.split(';')
+
+        rexp = compile('CREATE\sTABLE\s(\w+)\s\(')
+
+        tables = []
+        for cmd in cmds:
+            res = rexp.search(cmd)
+            if res is not None:
+                tables.append(res.group(1))
+
+        cursor = self._cursor()
+        cursor.execute('DROP TABLE ' + ','.join(tables))
         self.commit()

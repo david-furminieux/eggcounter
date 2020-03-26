@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 from logging import getLogger
 from logging.config import dictConfig
 
-from eggcounter.commands import CLIRunner, SystemBootStraper
+from eggcounter.commands import SystemBootStraper, TearDownCommand
 
 DEFAULT_LOG_CONF = {
     'version': 1,
@@ -40,7 +40,8 @@ DEFAULT_LOG_CONF = {
 VALID_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR']
 
 COMMANDS = {
-    'init': SystemBootStraper
+    'init': SystemBootStraper,
+    'remove': TearDownCommand,
 }
 
 
@@ -53,7 +54,7 @@ def parseArguments():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('init', default=False, nargs='?',
                        help='initialize a finance store')
-    group.add_argument('bla', default=False, nargs='?',
+    group.add_argument('remove', default=False, nargs='?',
                        help='do something else')
 
     group = parser.add_argument_group('logging')
