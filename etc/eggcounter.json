@@ -1,0 +1,10 @@
+{
+   "version": 0.1,
+   "dbConnection": {
+      "driver": "psycopg2",
+      "database": "finance",
+      "user": "david",
+      "password": "bla"
+  },
+  "baseCurrency": "EUR"
+}

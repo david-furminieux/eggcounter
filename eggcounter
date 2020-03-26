@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+from anyjson import deserialize
+from argparse import ArgumentParser
+from logging import getLogger
+from logging.config import dictConfig
+
+from eggcounter.commands import CLIRunner, SystemBootStraper
+
+DEFAULT_LOG_CONF = {
+    'version': 1,
+    'formatters': {
+        'default': {
+            'format': '%(asctime)s-%(name)s\t-%(levelname)s %(message)s',
+            'datefmt': '%Y-%m-%dT%H:%M:%S'
+        }
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'default',
+            'level': 'DEBUG',
+            'stream': 'ext://sys.stderr'
+        }
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARN'
+    },
+    'loggers': {
+        'example': {
+            'level': 'DEBUG',
+            'handlers': ['console'],
+            'propagate': 'no'
+        }
+    }
+}
+
+VALID_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR']
+
+COMMANDS = {
+    'init': SystemBootStraper
+}
+
+
+def parseArguments():
+
+    # think about using sub commands instead of mutually excluisive
+
+    parser = ArgumentParser(description='eggcounter stock monitoring')
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('init', default=False, nargs='?',
+                       help='initialize a finance store')
+    group.add_argument('bla', default=False, nargs='?',
+                       help='do something else')
+
+    group = parser.add_argument_group('logging')
+    group.add_argument('-l', '--log', type=str, nargs='?',
+        help='path to the log config (./etc/log.conf)',
+        default=None)
+    group.add_argument('--level', type=str, nargs='?',
+        help='set the loglevel for the root logger',
+        default='WARN')
+
+    parser.add_argument('-p', '--plugin', type=str, nargs='*',
+        help='path to a directory or an egg containing component plugins')
+    # this should be done somehow in another way
+    parser.add_argument('-D', '--define', type=str, nargs='*',
+        help='define a value at a certain point in the namespace',
+        default=[])
+
+    return parser.parse_args()
+
+
+def configureLogger(level=None, path=None):
+
+    exc = None
+    conf = DEFAULT_LOG_CONF
+
+    if path is not None:
+        try:
+            inputStream = open(path)
+            buff = ''.join(inputStream.readlines())
+            conf = deserialize(buff)
+        except Exception as ex:
+            exc = ex
+
+    validLevel = True
+    if level is not None:
+        if level in VALID_LOG_LEVELS:
+            conf['root']['level'] = level
+        else:
+            validLevel = False
+    dictConfig(conf)
+    if exc is not None:
+        getLogger('system').error(
+            'while reading log conf', exc_info=True)
+    if not validLevel:
+        getLogger('system').error(
+            '"{}" is not a valid log level'.format(level))
+
+
+def start():
+    args = parseArguments()
+    configureLogger(args.level, args.log)
+
+    logger = getLogger('system')
+    logger.info('start')
+    logger.debug('arguments are {}'.format(args))
+
+    COMMANDS[args.init](args).run()
+    logger.info('terminate')
+
+
+if __name__ == '__main__':
+    start()
